@@ -9,6 +9,7 @@ package store
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/eliquious/hraftd/pb"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 )
@@ -96,8 +98,9 @@ func (s *Store) Open(enableSingle bool) error {
 
 	// Create the log store and stable store.
 	logStore, err := raftboltdb.NewBoltStore(filepath.Join(s.RaftDir, "raft.db"))
+	// logStore, err := NewFileStore(filepath.Join(s.RaftDir, "filestore"))
 	if err != nil {
-		return fmt.Errorf("new bolt store: %s", err)
+		return fmt.Errorf("new store: %s", err)
 	}
 
 	// Instantiate the Raft systems.
@@ -116,18 +119,41 @@ func (s *Store) Get(key string) (string, error) {
 	return s.m[key], nil
 }
 
+// Do performs a request
+func (s *Store) Do(cmd *pb.Command) error {
+	if s.raft.State() != raft.Leader {
+		return fmt.Errorf("not leader")
+	}
+
+	switch cmd.Op {
+	case pb.CommandOp_SET, pb.CommandOp_DELETE:
+		b, err := cmd.Marshal()
+		if err != nil {
+			return err
+		}
+		f := s.raft.Apply(b, raftTimeout)
+		if err, ok := f.(error); ok {
+			return err
+		}
+	default:
+		return errors.New("unsupported operation")
+	}
+	return nil
+}
+
 // Set sets the value for the given key.
 func (s *Store) Set(key, value string) error {
 	if s.raft.State() != raft.Leader {
 		return fmt.Errorf("not leader")
 	}
 
-	c := &command{
-		Op:    "set",
+	c := &pb.Command{
+		Op:    pb.CommandOp_SET,
 		Key:   key,
 		Value: value,
 	}
-	b, err := json.Marshal(c)
+
+	b, err := c.Marshal()
 	if err != nil {
 		return err
 	}
@@ -146,11 +172,12 @@ func (s *Store) Delete(key string) error {
 		return fmt.Errorf("not leader")
 	}
 
-	c := &command{
-		Op:  "delete",
+	c := &pb.Command{
+		Op:  pb.CommandOp_DELETE,
 		Key: key,
 	}
-	b, err := json.Marshal(c)
+
+	b, err := c.Marshal()
 	if err != nil {
 		return err
 	}
@@ -180,15 +207,15 @@ type fsm Store
 
 // Apply applies a Raft log entry to the key-value store.
 func (f *fsm) Apply(l *raft.Log) interface{} {
-	var c command
-	if err := json.Unmarshal(l.Data, &c); err != nil {
+	c := &pb.Command{}
+	if err := c.Unmarshal(l.Data); err != nil {
 		panic(fmt.Sprintf("failed to unmarshal command: %s", err.Error()))
 	}
 
 	switch c.Op {
-	case "set":
+	case pb.CommandOp_SET:
 		return f.applySet(c.Key, c.Value)
-	case "delete":
+	case pb.CommandOp_DELETE:
 		return f.applyDelete(c.Key)
 	default:
 		panic(fmt.Sprintf("unrecognized command op: %s", c.Op))

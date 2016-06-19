@@ -1,0 +1,67 @@
+
+syntax = "proto3";
+
+package pb;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.equal_all) = true;
+option (gogoproto.verbose_equal_all) = true;
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) =  true;
+option (gogoproto.populate_all) = true;
+option (gogoproto.testgen_all) = true;
+option (gogoproto.benchgen_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message SetRequest {
+	string Key = 1;
+	string Value = 2;
+}
+
+message DeleteRequest {
+	string Key = 1;
+}
+
+message GetRequest {
+	string Key = 1;
+}
+
+message JoinRequest {
+	string RemoteAddr = 1;
+}
+
+message GetResponse {
+    string Value = 1;
+}
+
+message SetResponse {}
+message DeleteResponse {}
+message JoinResponse {}
+
+enum CommandOp {
+    UNKNOWN = 0;
+    GET = 1;
+    SET = 2;
+    DELETE = 3;
+}
+
+message Command {
+    CommandOp Op = 1;
+    string Key = 2;
+    string Value = 3;
+}
+
+message StreamResponse {}
+
+// Interface exported by the server.
+service KeyValue {
+    rpc Set(SetRequest) returns (SetResponse) {}
+    rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+	rpc Get(GetRequest) returns (GetResponse) {}
+    rpc Join(JoinRequest) returns (JoinResponse) {}
+
+    rpc Stream( stream Command ) returns (stream StreamResponse) {}
+}
