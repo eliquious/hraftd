@@ -102,9 +102,15 @@ func (s *Store) Open(enableSingle bool) error {
 	if err != nil {
 		return fmt.Errorf("new store: %s", err)
 	}
+	// logStore := raft.NewInmemStore()
+
+	logCache, err := raft.NewLogCache(256*1024, logStore)
+	if err != nil {
+		return fmt.Errorf("new cache: %s", err)
+	}
 
 	// Instantiate the Raft systems.
-	ra, err := raft.NewRaft(config, (*fsm)(s), logStore, logStore, snapshots, peerStore, transport)
+	ra, err := raft.NewRaft(config, (*fsm)(s), logCache, logStore, snapshots, peerStore, transport)
 	if err != nil {
 		return fmt.Errorf("new raft: %s", err)
 	}
